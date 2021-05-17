@@ -1,0 +1,28 @@
+diff --git a/src/main.rs b/src/main.rs
+index dcf740f..926df83 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,7 +1,8 @@
+ use std::fs;
+
+-fn iter_proc() {
+-    let paths = fs::read_dir("/proc").unwrap();
++fn iter_proc() -> Result<(), String> {
++    let paths = fs::read_dir("/proc").map_err(|_| String::from("Could not read /proc"))?;
++
+     for path in paths {
+         let path_info = path.unwrap();
+         let file_name = path_info.file_name();
+@@ -16,8 +17,10 @@ fn iter_proc() {
+             }
+         }
+     }
++
++    Ok(())
+ }
+
+-fn main() {
+-    iter_proc();
++fn main() -> Result<(), String> {
++    iter_proc()
+ }
