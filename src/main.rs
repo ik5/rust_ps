@@ -1,29 +1,48 @@
 // use std::ffi::OsString;
-use std::ffi;
+// use std::ffi;
+use libc;
 use std::fs;
 use std::io;
 use std::os::linux::fs::MetadataExt;
 
-pub struct Passwd {
-    pub pw_name: ffi::CString,
-    pub pw_passwd: ffi::CString,
-    pub pw_uid: u32,
-    pub pw_gid: u32,
-    pub pw_change: i64,
-    pub pw_class: ffi::CString,
-    pub pw_gecos: ffi::CString,
-    pub pw_dir: ffi::CString,
-    pub pw_shell: ffi::CString,
-    pub pw_expire: i64,
+fn get_user_name(uid: u32) -> String {
+    let user_name = unsafe {
+        let passwd = libc::getpwuid(uid);
+        let len = libc::strlen((*passwd).pw_name);
+        let slice = std::slice::from_raw_parts((*passwd).pw_name, len);
+        let mut result = String::from("");
+        for ch in slice {
+            result.push((*ch as u8) as char);
+        }
+        result
+    };
+    user_name
 }
 
-// extern "C" fn getpwuid(uid: u32) -> *mut Passwd;
+fn get_group_name(gid: u32) -> String {
+    let group_name = unsafe {
+        let group = libc::getgrgid(gid);
+        let len = libc::strlen((*group).gr_name);
+        let slice = std::slice::from_raw_parts((*group).gr_name, len);
+        let mut result = String::from("");
+        for ch in slice {
+            result.push((*ch as u8) as char);
+        }
+        result
+    };
 
-fn print_process_info(_pid: u64, file_name: String) -> io::Result<()> {
+    group_name
+}
+
+fn print_process_info(pid: u64, file_name: String) -> io::Result<()> {
     let meta = fs::metadata(file_name)?;
     let uid = meta.st_uid();
     let gid = meta.st_gid();
-    println!("uid: {:?} | gid: {:?}", uid, gid);
+    // println!("uid: {:?} | gid: {:?}", uid, gid);
+
+    let user_name = get_user_name(uid);
+    let group_name = get_group_name(gid);
+    println!("{}", format!("{:5} {:5} {:10}", user_name, group_name, pid));
 
     Ok(())
 }
