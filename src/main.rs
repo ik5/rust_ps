@@ -1,4 +1,5 @@
 use libc;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fs;
 use std::fs::File;
@@ -11,6 +12,7 @@ struct ProcessInfo {
     pub pid: u64,
     pub user_name: String,
     pub group_name: String,
+    pub raw_fields: HashMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -46,15 +48,27 @@ fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
     let status_file = File::open(&status_file_path)
         .expect(format!("cannot open file {:#?}", &status_file_path).as_str());
     let status_file = BufReader::new(status_file);
+    let mut raw_fields = HashMap::new();
+
     for line in status_file.lines().filter_map(|result| result.ok()) {
         let splitted = line.split(":\t").collect::<Vec<&str>>();
-        println!("{} -> {:#?}", line, splitted);
+
+        let len = splitted.len();
+        if len < 1 {
+            continue;
+        }
+        if len == 2 {
+            raw_fields.insert(String::from(splitted[0]), String::from(splitted[1]));
+            continue;
+        }
+        raw_fields.insert(String::from(splitted[0]), String::from(""));
     }
 
     let info = ProcessInfo {
         pid,
         user_name,
         group_name,
+        raw_fields,
     };
 
     Ok(info)
