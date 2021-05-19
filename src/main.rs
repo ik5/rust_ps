@@ -58,7 +58,7 @@ fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
             continue;
         }
         if len == 2 {
-            raw_fields.insert(String::from(splitted[0]), String::from(splitted[1]));
+            raw_fields.insert(String::from(splitted[0]), String::from(splitted[1].trim()));
             continue;
         }
         raw_fields.insert(String::from(splitted[0]), String::from(""));
