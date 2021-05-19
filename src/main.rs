@@ -14,7 +14,7 @@ struct ProcessInfo {
 }
 
 #[derive(Debug)]
-struct ProcessState {}
+struct ProcessStatus {}
 
 fn get_user_name(uid: u32) -> String {
     let name = unsafe {
