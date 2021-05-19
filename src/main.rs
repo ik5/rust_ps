@@ -1,14 +1,20 @@
 use libc;
 use std::ffi::CStr;
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::os::linux::fs::MetadataExt;
+use std::path::Path;
 
 #[derive(Debug)]
-struct Info {
+struct ProcessInfo {
     pub pid: u64,
     pub user_name: String,
     pub group_name: String,
 }
+
+#[derive(Debug)]
+struct ProcessState {}
 
 fn get_user_name(uid: u32) -> String {
     let name = unsafe {
@@ -29,14 +35,23 @@ fn get_group_name(gid: u32) -> String {
     group_name
 }
 
-fn process_info(pid: u64, file_name: String) -> Result<Info, String> {
+fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
     let meta =
-        fs::metadata(file_name).map_err(|_| String::from("Unable to read /proc directory"))?;
+        fs::metadata(&file_name).map_err(|_| String::from("Unable to read /proc directory"))?;
 
     let user_name = get_user_name(meta.st_uid());
     let group_name = get_group_name(meta.st_gid());
 
-    let info = Info {
+    let status_file_path = Path::new(&file_name).join("status");
+    let status_file = File::open(&status_file_path)
+        .expect(format!("cannot open file {:#?}", &status_file_path).as_str());
+    let status_file = BufReader::new(status_file);
+    for line in status_file.lines().filter_map(|result| result.ok()) {
+        let splitted = line.split(":").collect::<Vec<&str>>();
+        println!("{} -> {:#?}", line, splitted);
+    }
+
+    let info = ProcessInfo {
         pid,
         user_name,
         group_name,
@@ -45,11 +60,11 @@ fn process_info(pid: u64, file_name: String) -> Result<Info, String> {
     Ok(info)
 }
 
-fn iter_proc() -> Result<Vec<Info>, String> {
+fn iter_proc() -> Result<Vec<ProcessInfo>, String> {
     let paths =
         fs::read_dir("/proc").map_err(|_| String::from("Unable to read /proc directory"))?;
 
-    let mut info_list: Vec<Info> = Vec::new();
+    let mut info_list: Vec<ProcessInfo> = Vec::new();
     for path in paths {
         let path_info = path.unwrap();
         let full_path = path_info.path();
