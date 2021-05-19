@@ -47,7 +47,7 @@ fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
         .expect(format!("cannot open file {:#?}", &status_file_path).as_str());
     let status_file = BufReader::new(status_file);
     for line in status_file.lines().filter_map(|result| result.ok()) {
-        let splitted = line.split(":").collect::<Vec<&str>>();
+        let splitted = line.split(":\t").collect::<Vec<&str>>();
         println!("{} -> {:#?}", line, splitted);
     }
 
