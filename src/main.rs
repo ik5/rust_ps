@@ -48,21 +48,17 @@ fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
     let status_file = File::open(&status_file_path)
         .expect(format!("cannot open file {:#?}", &status_file_path).as_str());
     let status_file = BufReader::new(status_file);
-    let mut raw_fields = HashMap::new();
-
-    for line in status_file.lines().filter_map(|result| result.ok()) {
-        let splitted = line.split(":\t").collect::<Vec<&str>>();
-
-        let len = splitted.len();
-        if len < 1 {
-            continue;
-        }
-        if len == 2 {
-            raw_fields.insert(String::from(splitted[0]), String::from(splitted[1].trim()));
-            continue;
-        }
-        raw_fields.insert(String::from(splitted[0]), String::from(""));
-    }
+    let raw_fields = status_file
+        .lines()
+        .filter_map(|line| {
+            let line = line.ok()?;
+            let mut splitted = line.split(":\t");
+            Some((
+                splitted.next()?.trim().to_string(),
+                splitted.next().unwrap_or_else(|| "").trim().to_string(),
+            ))
+        })
+        .collect();
 
     let info = ProcessInfo {
         pid,
