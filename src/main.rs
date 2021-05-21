@@ -37,13 +37,7 @@ fn get_group_name(gid: u32) -> String {
     group_name
 }
 
-fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
-    let meta =
-        fs::metadata(&file_name).map_err(|_| String::from("Unable to read /proc directory"))?;
-
-    let user_name = get_user_name(meta.st_uid());
-    let group_name = get_group_name(meta.st_gid());
-
+fn get_raw_fields(file_name: &String) -> Result<HashMap<String, String>, String> {
     let status_file_path = Path::new(&file_name).join("status");
     let status_file = File::open(&status_file_path)
         .expect(format!("cannot open file {:#?}", &status_file_path).as_str());
@@ -59,6 +53,18 @@ fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
             ))
         })
         .collect();
+
+    Ok(raw_fields)
+}
+
+fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
+    let meta =
+        fs::metadata(&file_name).map_err(|_| String::from("Unable to read /proc directory"))?;
+
+    let user_name = get_user_name(meta.st_uid());
+    let group_name = get_group_name(meta.st_gid());
+
+    let raw_fields = get_raw_fields(&file_name)?;
 
     let info = ProcessInfo {
         pid,
