@@ -4,21 +4,38 @@ use std::ffi::CStr;
 use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::os::linux::fs::MetadataExt;
 use std::path::Path;
+
+enum QueryType {
+    UserID,
+    GroupID,
+}
 
 #[derive(Debug)]
 struct ProcessInfo {
     pub pid: u64,
-    pub user_name: String,
-    pub group_name: String,
+    pub uids: ProcessIDInfo,
+    pub gids: ProcessIDInfo,
     pub raw_fields: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+struct ProcessIDInfo {
+    pub real_string: String,
+    pub real_id: u32,
+    pub effective_string: String,
+    pub effective_id: u32,
+    pub saved_set_string: String,
+    pub saved_set_id: u32,
+    pub file_system_string: String,
+    pub file_system_id: u32,
 }
 
 #[derive(Debug)]
 struct ProcessStatus {}
 
-fn get_user_name(uid: u32) -> String {
+// TODO: create a cache system for known uid
+fn query_user_name(uid: u32) -> String {
     let name = unsafe {
         let passwd = libc::getpwuid(uid);
         let result = CStr::from_ptr((*passwd).pw_name);
@@ -27,7 +44,8 @@ fn get_user_name(uid: u32) -> String {
     name
 }
 
-fn get_group_name(gid: u32) -> String {
+// TODO: create a cache system for known gid
+fn query_group_name(gid: u32) -> String {
     let group_name = unsafe {
         let group = libc::getgrgid(gid);
         let result = CStr::from_ptr((*group).gr_name);
@@ -57,19 +75,66 @@ fn get_raw_fields(file_name: &String) -> Result<HashMap<String, String>, String>
     Ok(raw_fields)
 }
 
+fn query_ids(id_type: QueryType, list: &String) -> Result<ProcessIDInfo, String> {
+    let mut splitted = list.split("\t");
+    let real: u32 = match splitted.next() {
+        Some(r) => r.parse().unwrap(),
+        _ => 0,
+    };
+
+    let effective: u32 = match splitted.next() {
+        Some(e) => e.parse().unwrap(),
+        _ => 0,
+    };
+
+    let saved_set: u32 = match splitted.next() {
+        Some(s) => s.parse().unwrap(),
+        _ => 0,
+    };
+
+    let file_system: u32 = match splitted.next() {
+        Some(fs) => fs.parse().unwrap(),
+        _ => 0,
+    };
+
+    let pids = ProcessIDInfo {
+        real_string: match id_type {
+            QueryType::UserID => query_user_name(real),
+            QueryType::GroupID => query_group_name(real),
+        },
+        real_id: real,
+        effective_string: match id_type {
+            QueryType::UserID => query_user_name(effective),
+            QueryType::GroupID => query_group_name(effective),
+        },
+        effective_id: effective,
+        saved_set_string: match id_type {
+            QueryType::UserID => query_user_name(saved_set),
+            QueryType::GroupID => query_group_name(saved_set),
+        },
+        saved_set_id: saved_set,
+        file_system_string: match id_type {
+            QueryType::UserID => query_user_name(file_system),
+            QueryType::GroupID => query_group_name(file_system),
+        },
+        file_system_id: file_system,
+    };
+
+    Ok(pids)
+}
+
 fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
-    let meta =
-        fs::metadata(&file_name).map_err(|_| String::from("Unable to read /proc directory"))?;
-
-    let user_name = get_user_name(meta.st_uid());
-    let group_name = get_group_name(meta.st_gid());
-
     let raw_fields = get_raw_fields(&file_name)?;
+
+    let uid_list: String = raw_fields["Uid"].to_string();
+    let gid_list: String = raw_fields["Gid"].to_string();
+    let uids = query_ids(QueryType::UserID, &uid_list)?;
+    let gids = query_ids(QueryType::GroupID, &gid_list)?;
 
     let info = ProcessInfo {
         pid,
-        user_name,
-        group_name,
+        uids,
+        gids,
         raw_fields,
     };
 
