@@ -22,29 +22,28 @@ struct ProcessInfo {
 #[derive(Debug)]
 struct ProcessIDInfo {
     pub real_string: String,
-    pub real_id: u32,
     pub effective_string: String,
-    pub effective_id: u32,
     pub saved_set_string: String,
-    pub saved_set_id: u32,
     pub file_system_string: String,
+    pub effective_id: u32,
+    pub real_id: u32,
+    pub saved_set_id: u32,
     pub file_system_id: u32,
 }
 
 #[derive(Debug)]
 struct ProcessStatus {}
 
-// TODO: create a cache system for known uid
 fn query_user_name(uid: u32) -> String {
     let name = unsafe {
         let passwd = libc::getpwuid(uid);
         let result = CStr::from_ptr((*passwd).pw_name);
         result.to_string_lossy().into_owned()
     };
+
     name
 }
 
-// TODO: create a cache system for known gid
 fn query_group_name(gid: u32) -> String {
     let group_name = unsafe {
         let group = libc::getgrgid(gid);
@@ -75,7 +74,12 @@ fn get_raw_fields(file_name: &String) -> Result<HashMap<String, String>, String>
     Ok(raw_fields)
 }
 
-fn query_ids(id_type: QueryType, list: &String) -> Result<ProcessIDInfo, String> {
+fn query_ids(
+    id_type: QueryType,
+    list: &String,
+    uid_cache: &mut HashMap<u32, String>,
+    gid_cache: &mut HashMap<u32, String>,
+) -> Result<ProcessIDInfo, String> {
     let mut splitted = list.split("\t");
     let real: u32 = match splitted.next() {
         Some(r) => r.parse().unwrap(),
@@ -99,23 +103,71 @@ fn query_ids(id_type: QueryType, list: &String) -> Result<ProcessIDInfo, String>
 
     let pids = ProcessIDInfo {
         real_string: match id_type {
-            QueryType::UserID => query_user_name(real),
-            QueryType::GroupID => query_group_name(real),
+            QueryType::UserID => {
+                let id = query_user_name(real);
+                if !uid_cache.contains_key(&real) {
+                    uid_cache.insert(real, id.to_string());
+                }
+                id
+            }
+            QueryType::GroupID => {
+                let id = query_group_name(real);
+                if !gid_cache.contains_key(&real) {
+                    gid_cache.insert(real, id.to_string());
+                }
+                id
+            }
         },
         real_id: real,
         effective_string: match id_type {
-            QueryType::UserID => query_user_name(effective),
-            QueryType::GroupID => query_group_name(effective),
+            QueryType::UserID => {
+                let id = query_user_name(effective);
+                if !uid_cache.contains_key(&effective) {
+                    uid_cache.insert(effective, id.to_string());
+                }
+                id
+            }
+            QueryType::GroupID => {
+                let id = query_group_name(effective);
+                if !gid_cache.contains_key(&effective) {
+                    gid_cache.insert(effective, id.to_string());
+                }
+                id
+            }
         },
         effective_id: effective,
         saved_set_string: match id_type {
-            QueryType::UserID => query_user_name(saved_set),
-            QueryType::GroupID => query_group_name(saved_set),
+            QueryType::UserID => {
+                let id = query_user_name(saved_set);
+                if !uid_cache.contains_key(&saved_set) {
+                    uid_cache.insert(saved_set, id.to_string());
+                }
+                id
+            }
+            QueryType::GroupID => {
+                let id = query_group_name(saved_set);
+                if !gid_cache.contains_key(&saved_set) {
+                    gid_cache.insert(saved_set, id.to_string());
+                }
+                id
+            }
         },
         saved_set_id: saved_set,
         file_system_string: match id_type {
-            QueryType::UserID => query_user_name(file_system),
-            QueryType::GroupID => query_group_name(file_system),
+            QueryType::UserID => {
+                let id = query_user_name(file_system);
+                if !uid_cache.contains_key(&file_system) {
+                    uid_cache.insert(file_system, id.to_string());
+                }
+                id
+            }
+            QueryType::GroupID => {
+                let id = query_group_name(file_system);
+                if !gid_cache.contains_key(&file_system) {
+                    gid_cache.insert(file_system, id.to_string());
+                }
+                id
+            }
         },
         file_system_id: file_system,
     };
@@ -123,19 +175,22 @@ fn query_ids(id_type: QueryType, list: &String) -> Result<ProcessIDInfo, String>
     Ok(pids)
 }
 
-fn process_info(pid: u64, file_name: String) -> Result<ProcessInfo, String> {
+fn process_info(
+    pid: u64,
+    file_name: String,
+    uid_cache: &mut HashMap<u32, String>,
+    gid_cache: &mut HashMap<u32, String>,
+) -> Result<ProcessInfo, String> {
     let raw_fields = get_raw_fields(&file_name)?;
 
     let uid_list: String = raw_fields["Uid"].to_string();
     let gid_list: String = raw_fields["Gid"].to_string();
-    let uids = query_ids(QueryType::UserID, &uid_list)?;
-    let gids = query_ids(QueryType::GroupID, &gid_list)?;
 
     let info = ProcessInfo {
-        pid,
-        uids,
-        gids,
-        raw_fields,
+        pid: pid,
+        uids: query_ids(QueryType::UserID, &uid_list, uid_cache, gid_cache)?,
+        gids: query_ids(QueryType::GroupID, &gid_list, uid_cache, gid_cache)?,
+        raw_fields: raw_fields,
     };
 
     Ok(info)
@@ -146,6 +201,8 @@ fn iter_proc() -> Result<Vec<ProcessInfo>, String> {
         fs::read_dir("/proc").map_err(|_| String::from("Unable to read /proc directory"))?;
 
     let mut info_list: Vec<ProcessInfo> = Vec::new();
+    let mut uid_cache: HashMap<u32, String> = HashMap::new();
+    let mut gid_cache: HashMap<u32, String> = HashMap::new();
     for path in paths {
         let path_info = path.unwrap();
         let full_path = path_info.path();
@@ -164,7 +221,13 @@ fn iter_proc() -> Result<Vec<ProcessInfo>, String> {
         }
 
         let full_path_string = String::from(full_path.to_str().unwrap());
-        let info = process_info(pid.unwrap(), full_path_string).map_err(|e| e)?;
+        let info = process_info(
+            pid.unwrap(),
+            full_path_string,
+            &mut uid_cache,
+            &mut gid_cache,
+        )
+        .map_err(|e| e)?;
         info_list.push(info);
     }
     Ok(info_list)
